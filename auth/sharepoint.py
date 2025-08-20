@@ -556,22 +556,20 @@ class SharePointClient:
             bool: True si la conexión es exitosa, False en caso contrario.
         """
         try:
-            st.info("🔍 Probando conexión a SharePoint...")
-            st.info(f"URL: {self.site_url}")
-            st.info(f"Sitio: {self.site_name}")
+            hostname = self.site_url.replace("https://", "").replace("http://", "")
+            url = f"https://graph.microsoft.com/v1.0/sites/{hostname}:/sites/{self.site_name}"
             
-            site_id = self.get_site_id()
-            if site_id:
-                st.success("✅ Conexión a SharePoint exitosa")
-                return True
+            response = requests.get(url, headers=self.headers)
+            
+            if response.status_code == 200:
+                site_data = response.json()
+                site_id = site_data.get('id')
+                if site_id:
+                    return True
+                else:
+                    return False
             else:
-                st.error("❌ No se pudo conectar a SharePoint")
-                st.info("💡 Posibles soluciones:")
-                st.write("1. Verifica que el sitio 'fronterascomerciales' existe en SharePoint")
-                st.write("2. Verifica que tu aplicación tiene permisos para acceder al sitio")
-                st.write("3. Verifica que los permisos de API están configurados correctamente")
                 return False
                 
         except Exception as e:
-            st.error(f"❌ Error de conexión: {str(e)}")
             return False

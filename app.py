@@ -426,6 +426,38 @@ with st.expander("🔍 Ver detalles del Paso 3", expanded=True):
     - `total_consumo_{mes}_{año}.csv`
     """)
     
+    # Selectores de año y mes
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Selector de año (últimos 5 años + año actual)
+        current_year = datetime.now().year
+        year_options = list(range(current_year - 4, current_year + 1))
+        selected_year = st.selectbox(
+            "📅 Seleccionar Año:",
+            options=year_options,
+            index=len(year_options) - 1,  # Por defecto año actual
+            help="Selecciona el año para procesar los datos"
+        )
+    
+    with col2:
+        # Selector de mes
+        month_options = [
+            ("Enero", "01"), ("Febrero", "02"), ("Marzo", "03"), ("Abril", "04"),
+            ("Mayo", "05"), ("Junio", "06"), ("Julio", "07"), ("Agosto", "08"),
+            ("Septiembre", "09"), ("Octubre", "10"), ("Noviembre", "11"), ("Diciembre", "12")
+        ]
+        selected_month_name, selected_month = st.selectbox(
+            "📅 Seleccionar Mes:",
+            options=month_options,
+            index=datetime.now().month - 1,  # Por defecto mes actual
+            format_func=lambda x: x[0],  # Mostrar nombre del mes
+            help="Selecciona el mes para procesar los datos"
+        )
+    
+    # Mostrar información de selección
+    st.info(f"📋 **Procesamiento seleccionado**: {selected_month_name} {selected_year}")
+    
     if st.button("🚀 Ejecutar Paso 3: Procesar datos", 
                 disabled=not st.session_state['sharepoint_connected'] or st.session_state['files_processed'],
                 type="primary"):
@@ -446,53 +478,38 @@ with st.expander("🔍 Ver detalles del Paso 3", expanded=True):
                 
                 # Probar conexión a SharePoint
                 if sharepoint_client.test_connection():
-                    # Obtener año y mes actual
-                    current_year = datetime.now().year
-                    current_month = f"{datetime.now().month:02d}"
+                    # Procesar el mes seleccionado
+                    processed_data = data_processor.process_month_data(sharepoint_client, selected_year, selected_month)
                     
-                    # Obtener mes anterior
-                    ftp_client = FTPClient()
-                    previous_year, previous_month = ftp_client.get_previous_month(current_year, int(current_month))
-                    
-                    # Procesar mes anterior
-                    st.subheader(f"📅 Procesando mes anterior: {previous_month}/{previous_year}")
-                    processed_previous = data_processor.process_month_data(sharepoint_client, previous_year, previous_month)
-                    
-                    if processed_previous:
-                        # Generar archivos de salida para mes anterior
-                        output_files_previous = data_processor.generate_output_files(processed_previous, previous_year, previous_month)
+                    if processed_data:
+                        # Generar archivos de salida
+                        output_files = data_processor.generate_output_files(processed_data, selected_year, selected_month)
                         
-                        # Subir archivos procesados
-                        for file_type, file_data in output_files_previous.items():
-                            sharepoint_client.upload_processed_files(
-                                previous_year, previous_month, 
-                                file_data['content'], file_data['name']
-                            )
-                    
-                    # Procesar mes actual
-                    st.subheader(f"📅 Procesando mes actual: {current_month}/{current_year}")
-                    processed_current = data_processor.process_month_data(sharepoint_client, current_year, current_month)
-                    
-                    if processed_current:
-                        # Generar archivos de salida para mes actual
-                        output_files_current = data_processor.generate_output_files(processed_current, current_year, current_month)
-                        
-                        # Subir archivos procesados
-                        for file_type, file_data in output_files_current.items():
-                            sharepoint_client.upload_processed_files(
-                                current_year, current_month, 
-                                file_data['content'], file_data['name']
-                            )
-                    
-                    if processed_previous and processed_current:
-                        st.session_state['files_processed'] = True
-                        st.session_state['success_message'] = "Paso 3 completado: Datos procesados exitosamente"
+                        if output_files:
+                            # Subir archivos procesados
+                            uploaded_count = 0
+                            
+                            for file_type, file_data in output_files.items():
+                                if sharepoint_client.upload_processed_files(
+                                    selected_year, selected_month, 
+                                    file_data['content'], file_data['name']
+                                ):
+                                    uploaded_count += 1
+                            
+                            if uploaded_count == len(output_files):
+                                st.session_state['files_processed'] = True
+                                st.session_state['success_message'] = f"✅ Paso 3 completado: {selected_month_name} {selected_year} procesado exitosamente"
+                            else:
+                                st.session_state['error_message'] = f"Error: Solo se subieron {uploaded_count} de {len(output_files)} archivos"
+                        else:
+                            st.session_state['error_message'] = "Error: No se pudieron generar los archivos de salida"
                     else:
-                        st.session_state['error_message'] = "Error al procesar algunos datos"
+                        st.session_state['error_message'] = f"Error: No se pudieron procesar los datos para {selected_month_name} {selected_year}"
                 else:
-                    st.session_state['error_message'] = "No se pudo conectar a SharePoint"
+                    st.session_state['error_message'] = "Error: No se pudo conectar a SharePoint"
                 
             except Exception as e:
+                st.error(f"❌ Error en Paso 3: {str(e)}")
                 st.session_state['error_message'] = f"Error en Paso 3: {str(e)}"
         
         st.rerun()

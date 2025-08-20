@@ -277,7 +277,7 @@ class DataProcessor:
                 st.error("❌ La cantidad de archivos AENC no coincide con la cantidad de archivos TFROC")
                 return None
             
-            st.success(f"✅ Archivos cargados: {len(aenc_files)} AENC y {len(tfroc_files)} TFROC")
+            st.info(f"📁 Archivos en carpeta: {len(aenc_files)} AENC y {len(tfroc_files)} TFROC")
             
             # Inicializar DataFrames consolidados
             consolidated_aenc_df = pd.DataFrame()
@@ -294,7 +294,6 @@ class DataProcessor:
                 # Buscar archivo TFROC correspondiente
                 tfroc_file = next((f for f in tfroc_files if day in f['name']), None)
                 if tfroc_file is None:
-                    st.warning(f"⚠️ No se encontró archivo TFROC para el día {day}")
                     continue
                 
                 # Obtener contenido de los archivos
