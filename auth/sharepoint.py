@@ -132,28 +132,44 @@ class SharePointClient:
             st.error(f"Error al listar archivos en {folder_path}: {str(e)}")
             return []
     
-    def check_files_exist(self, folder_path, prefix):
+    def check_files_by_priority(self, folder_path, prefix):
         """
-        Verifica si existen archivos con extensión .TxF en SharePoint.
+        Verifica archivos por prioridad (.TxF > .TxR > .Tx2) en SharePoint.
         
         Args:
             folder_path (str): Ruta de la carpeta en SharePoint
             prefix (str): Prefijo del archivo (aenc o tfroc)
             
         Returns:
-            list: Lista de archivos .TxF encontrados
+            dict: Diccionario con archivos por prioridad
         """
         files = self.list_files(folder_path)
+        
+        # Filtrar archivos por prefijo y extensión
         txf_files = [
             file['name'] for file in files 
             if file['name'].startswith(prefix) and file['name'].endswith(".TxF")
         ]
-        return txf_files
+        txr_files = [
+            file['name'] for file in files 
+            if file['name'].startswith(prefix) and file['name'].endswith(".TxR")
+        ]
+        tx2_files = [
+            file['name'] for file in files 
+            if file['name'].startswith(prefix) and file['name'].endswith(".Tx2")
+        ]
+        
+        return {
+            'txf': txf_files,
+            'txr': txr_files,
+            'tx2': tx2_files
+        }
     
     def verify_files_before_download(self, year, month):
         """
-        Verifica si ya existen archivos .TxF en SharePoint antes de descargar del FTP
-        Retorna True si existen archivos, False si no existen
+        Verifica si ya existen archivos en SharePoint antes de descargar del FTP
+        Sigue la jerarquía: .TxF > .TxR > .Tx2
+        Retorna True si existen archivos de alta prioridad, False si necesita descargar
         """
         try:
             # Convertir month a entero si es string
@@ -162,17 +178,57 @@ class SharePointClient:
             else:
                 month_int = month
             
-            folder_path = f"Documentos Compartidos/aenc/{year}/{month_int:02d}"
-            txf_files = self.check_files_exist(folder_path, "aenc")
+            folder_path = f"aenc_pruebas/{year}/{month_int:02d}"
             
-            if txf_files:
-                st.warning(f"📁 Archivos .TxF ya existen en SharePoint para {year}-{month_int:02d}")
-                st.info(f"Archivos encontrados: {', '.join(txf_files)}")
+            st.info(f"🔍 Verificando carpeta: {folder_path}")
+            
+            # Verificar archivos AENC por prioridad
+            aenc_files = self.check_files_by_priority(folder_path, "aenc")
+            tfroc_files = self.check_files_by_priority(folder_path, "tfroc")
+            
+            st.info(f"📋 Archivos encontrados - AENC: {aenc_files}, TFROC: {tfroc_files}")
+            
+            # Determinar si necesita descargar basándose en la jerarquía
+            needs_download = False
+            
+            # Si hay archivos .TxF, no necesita descargar
+            if aenc_files['txf'] or tfroc_files['txf']:
+                st.success(f"✅ Archivos .TxF encontrados en SharePoint para {year}-{month_int:02d}")
+                if aenc_files['txf']:
+                    st.info(f"AENC .TxF: {', '.join(aenc_files['txf'])}")
+                if tfroc_files['txf']:
+                    st.info(f"TFROC .TxF: {', '.join(tfroc_files['txf'])}")
+                st.info("🔄 NO necesita descargar del FTP")
                 return True
+            
+            # Si no hay .TxF pero hay .TxR, verificar si son suficientes
+            elif aenc_files['txr'] or tfroc_files['txr']:
+                st.warning(f"⚠️ Solo archivos .TxR encontrados en SharePoint para {year}-{month_int:02d}")
+                if aenc_files['txr']:
+                    st.info(f"AENC .TxR: {', '.join(aenc_files['txr'])}")
+                if tfroc_files['txr']:
+                    st.info(f"TFROC .TxR: {', '.join(tfroc_files['txr'])}")
+                st.info("🔄 Descargando archivos del FTP para obtener versiones .TxF...")
+                needs_download = True
+            
+            # Si solo hay .Tx2 o no hay archivos, necesita descargar
+            elif aenc_files['tx2'] or tfroc_files['tx2']:
+                st.warning(f"⚠️ Solo archivos .Tx2 encontrados en SharePoint para {year}-{month_int:02d}")
+                if aenc_files['tx2']:
+                    st.info(f"AENC .Tx2: {', '.join(aenc_files['tx2'])}")
+                if tfroc_files['tx2']:
+                    st.info(f"TFROC .Tx2: {', '.join(tfroc_files['tx2'])}")
+                st.info("🔄 Descargando archivos del FTP para obtener versiones .TxF...")
+                needs_download = True
+            
             else:
-                st.info(f"📁 No se encontraron archivos .TxF en SharePoint para {year}-{month_int:02d}")
+                st.info(f"📁 No se encontraron archivos en SharePoint para {year}-{month_int:02d}")
                 st.info("✅ Procediendo con la descarga del FTP...")
-                return False
+                needs_download = True
+            
+            st.info(f"🔄 Retornando {not needs_download} (needs_download={needs_download})")
+            st.info(f"🔍 RESULTADO: {'NO descargar' if not needs_download else 'SÍ descargar'}")
+            return not needs_download
                 
         except Exception as e:
             st.error(f"Error al verificar archivos en SharePoint: {e}")
@@ -321,7 +377,7 @@ class SharePointClient:
         Returns:
             str: Ruta de la carpeta en SharePoint
         """
-        return f"Documentos Compartidos/aenc/{year}/{month}"
+        return f"aenc_pruebas/{year}/{month}"
     
     def process_month_upload(self, year, month, local_folder="archivos_descargados"):
         """
@@ -337,10 +393,16 @@ class SharePointClient:
         """
         folder_path = self.get_folder_path(year, month)
         
-        # Verificar si ya existen archivos .TxF
-        aenc_txf = self.check_files_exist(folder_path, "aenc")
-        if aenc_txf:
+        # Verificar si ya existen archivos de alta prioridad (.TxF)
+        aenc_files = self.check_files_by_priority(folder_path, "aenc")
+        tfroc_files = self.check_files_by_priority(folder_path, "tfroc")
+        
+        if aenc_files['txf'] or tfroc_files['txf']:
             st.warning(f"⚠️ Archivos .TxF ya existen en SharePoint para {year}-{month}. No se subirán archivos.")
+            if aenc_files['txf']:
+                st.info(f"AENC .TxF existentes: {', '.join(aenc_files['txf'])}")
+            if tfroc_files['txf']:
+                st.info(f"TFROC .TxF existentes: {', '.join(tfroc_files['txf'])}")
             return True
         
         # Listar archivos locales
@@ -432,7 +494,7 @@ class SharePointClient:
             bool: True si la actualización es exitosa, False en caso contrario
         """
         try:
-            folder_path = "Documentos Compartidos/aenc/fact_consumos"
+            folder_path = "aenc_pruebas/fact_consumos"
             file_name = f"consumos_{year}.csv"
             site_id = self.get_site_id()
             if not site_id:

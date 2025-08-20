@@ -35,8 +35,6 @@ SHAREPOINT_CONFIG = {
     'url': 'https://ruitoqueesp1.sharepoint.com',
     'site': 'fronterascomerciales',
     # Nota: Las credenciales ahora se manejan a través de Azure AD
-    # 'user': 'rbadillo@ruitoqueesp.com',
-    # 'password': 'r2083502R'
 }
 
 # Mapeo de OR (Operador de Red)

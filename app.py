@@ -193,84 +193,35 @@ if st.session_state['success_message']:
     st.success(f"✅ {st.session_state['success_message']}")
     st.session_state['success_message'] = None
 
-# --- DIAGNÓSTICO INTEGRADO ---
-st.markdown("## 🔍 Diagnóstico de Conexión")
 
-with st.expander("🔧 Ejecutar diagnóstico de SharePoint", expanded=False):
-    st.markdown("""
-    **Diagnóstico integrado**: Este diagnóstico se ejecuta dentro de la aplicación principal 
-    para poder acceder al token de autenticación y verificar la conexión a SharePoint.
-    """)
-    
-    if st.button("🔍 Ejecutar Diagnóstico", type="secondary"):
-        if azure_auth.is_authenticated():
-            token = azure_auth.get_token()
-            st.success("✅ Token de autenticación disponible")
-            
-            # Crear cliente SharePoint
-            sharepoint_client = SharePointClient(token)
-            
-            # Ejecutar diagnóstico
-            st.subheader("📋 Resultados del Diagnóstico")
-            
-            # Probar conexión
-            st.write("**1. Prueba de conexión a SharePoint:**")
-            if sharepoint_client.test_connection():
-                st.success("✅ Conexión a SharePoint exitosa")
-                
-                # Verificar archivos existentes
-                st.write("**2. Verificación de archivos existentes:**")
-                current_year = datetime.now().year
-                current_month = datetime.now().month
-                
-                # Obtener mes anterior
-                ftp_client = FTPClient()
-                previous_year, previous_month = ftp_client.get_previous_month(current_year, current_month)
-                
-                st.info(f"Verificando archivos para:")
-                st.info(f"- Mes actual: {current_month}/{current_year}")
-                st.info(f"- Mes anterior: {previous_month}/{previous_year}")
-                
-                # Verificar mes actual
-                current_files_exist = sharepoint_client.verify_files_before_download(current_year, current_month)
-                prev_files_exist = sharepoint_client.verify_files_before_download(previous_year, previous_month)
-                
-                st.write("**3. Resumen:**")
-                if current_files_exist and prev_files_exist:
-                    st.success("✅ Ambos meses tienen archivos .TxF en SharePoint")
-                    st.info("No es necesario descargar archivos del FTP")
-                elif current_files_exist or prev_files_exist:
-                    st.warning("⚠️ Solo un mes tiene archivos .TxF en SharePoint")
-                    st.info("Se necesitará descargar archivos del FTP para el mes faltante")
-                else:
-                    st.info("ℹ️ Ningún mes tiene archivos .TxF en SharePoint")
-                    st.info("Se necesitará descargar archivos del FTP para ambos meses")
-            else:
-                st.error("❌ No se pudo conectar a SharePoint")
-                st.info("💡 Verifica los permisos de la aplicación en Azure Portal")
-        else:
-            st.error("❌ No hay token de autenticación")
-            st.info("💡 Primero inicia sesión con Azure AD")
 
 # --- PASO 1: DESCARGAR ARCHIVOS DESDE FTP ---
 st.markdown("## 📥 Paso 1: Descargar archivos desde FTP")
 
 with st.expander("🔍 Ver detalles del Paso 1", expanded=True):
     st.markdown("""
-    **Objetivo**: Verificar si ya existen archivos en SharePoint, y si no existen, 
-    conectar al servidor FTP de XM y descargar los archivos AENC y TFROC del mes actual y del mes anterior.
-    
     **Lógica del proceso**:
-    1. Verificar si ya existen archivos .TxF en SharePoint para el mes actual y anterior
-    2. Si existen archivos, no descargar del FTP
-    3. Si no existen, proceder con la descarga del FTP
+    
+    **PROCESO 1 (Mes anterior)**:
+    1. Crea conexion al servidor FTP de XM
+    2. Verificar archivos existentes en SharePoint para mes anterior
+    3. Si existen archivos .TxF, no descargar del FTP
+    4. Si no existen, proceder con la descarga de los archivos .TxF desde el FTP
+    5. Primero busca archivos ".TxF". Si no hay ".TxF", busca ".TxR". Si no hay ".TxR", busca ".Tx2"
+    6. Cerrar conexiones del proceso 1
+    
+    **PROCESO 2 (Mes actual)**:
+    
+    7. Crear nuevas conexiones independientes para SharePoint y FTP
+    8. Siempre proceder con la descarga de los archivos aenc y tfroc del mes actual desde el FTP
+    9. Cerrar conexiones del proceso 2
     
     **Archivos a descargar**:
     - Archivos AENC (con prioridad .TxF > .TxR > .Tx2)
     - Archivos TFROC (con prioridad .TxF > .TxR > .Tx2)
     
     **Ubicación FTP**: `/INFORMACION_XM/USUARIOSK/RTQC/sic/comercia/{año}-{mes}`
-    **Ubicación SharePoint**: `Documentos Compartidos/aenc/{año}/{mes}`
+    **Ubicación SharePoint**: `Documentos/aenc/{año}/{mes}`
     """)
     
     if st.button("🚀 Ejecutar Paso 1: Descargar archivos", 
@@ -302,44 +253,88 @@ with st.expander("🔍 Ver detalles del Paso 1", expanded=True):
                     ftp_client = FTPClient()
                     previous_year, previous_month = ftp_client.get_previous_month(current_year, current_month)
                     
-                    # Verificar archivos existentes
-                    st.info("🔍 Verificando archivos existentes en SharePoint...")
-                    current_files_exist = sharepoint_client.verify_files_before_download(current_year, current_month)
-                    prev_files_exist = sharepoint_client.verify_files_before_download(previous_year, previous_month)
+                    # Variables para rastrear descargas
+                    files_downloaded = False
                     
-                    # Si ambos meses ya tienen archivos, no proceder con la descarga
-                    if current_files_exist and prev_files_exist:
-                        st.warning("⚠️ Los archivos ya existen en SharePoint para ambos meses")
-                        st.info("No es necesario descargar archivos del FTP")
-                        st.session_state['ftp_connected'] = True
-                        st.session_state['files_downloaded'] = True
-                        st.session_state['success_message'] = "Paso 1 completado: Archivos ya existen en SharePoint"
+                    # ========================================
+                    # PROCESO 1: MES ANTERIOR
+                    # ========================================
+                    st.subheader(f"📅 PROCESO 1: Mes anterior ({previous_month}/{previous_year})")
+                    
+                    # Crear nuevas instancias para el mes anterior
+                    sharepoint_client_prev = SharePointClient(token)
+                    ftp_client_prev = FTPClient()
+                    
+                    # Verificar archivos existentes para mes anterior (solo .TxF)
+                    prev_files_exist = sharepoint_client_prev.verify_files_before_download(previous_year, previous_month)
+                    
+                    if not prev_files_exist:
+                        # Conectar al FTP y descargar archivos del mes anterior
+                        if ftp_client_prev.connect():
+                            st.session_state['ftp_connected'] = True
+                            prev_files = ftp_client_prev.download_month_files(previous_year, previous_month)
+                            
+                            # Cerrar conexión FTP del mes anterior
+                            ftp_client_prev.disconnect()
+                            
+                            if prev_files:
+                                st.success(f"✅ Descargados {len(prev_files)} archivos del mes anterior")
+                                files_downloaded = True
+                            else:
+                                st.warning("⚠️ No se pudieron descargar archivos del mes anterior")
+                        else:
+                            st.error("❌ No se pudo conectar al servidor FTP para el mes anterior")
+                            st.session_state['error_message'] = "Error de conexión FTP para mes anterior"
+                            st.rerun()
+                            st.stop()
+                    else:
+                        st.info(f"✅ Mes anterior {previous_month}/{previous_year}: Archivos .TxF ya existen en SharePoint")
+                    
+                    # ========================================
+                    # PROCESO 2: MES ACTUAL
+                    # ========================================
+                    st.subheader(f"📅 PROCESO 2: Mes actual ({current_month}/{current_year})")
+                    
+                    # Crear nuevas instancias para el mes actual
+                    sharepoint_client_current = SharePointClient(token)
+                    ftp_client_current = FTPClient()
+                    
+                    # Siempre descargar archivos del mes actual desde FTP (sin verificar SharePoint)
+                    try:
+                        # Conectar al FTP para el mes actual
+                        if ftp_client_current.connect():
+                            st.session_state['ftp_connected'] = True
+                            
+                            # Llamar al método de descarga
+                            current_files = ftp_client_current.download_month_files(current_year, current_month)
+                            
+                            # Cerrar conexión FTP del mes actual
+                            ftp_client_current.disconnect()
+                            
+                            if current_files and len(current_files) > 0:
+                                st.success(f"✅ Descargados {len(current_files)} archivos del mes actual")
+                                files_downloaded = True
+                            else:
+                                st.warning("⚠️ No se pudieron descargar archivos del mes actual")
+                        else:
+                            st.error("❌ No se pudo conectar al servidor FTP para el mes actual")
+                            st.session_state['error_message'] = "Error de conexión FTP para mes actual"
+                            st.rerun()
+                            st.stop()
+                            
+                    except Exception as e:
+                        st.error(f"❌ Error durante la descarga del mes actual: {str(e)}")
+                        st.session_state['error_message'] = f"Error en descarga del mes actual: {str(e)}"
                         st.rerun()
                         st.stop()
                     
-                    # Si al menos un mes necesita archivos, proceder con la descarga
-                    st.info("🔄 Procediendo con la descarga del FTP...")
-                    
-                    # Conectar al FTP
-                    if ftp_client.connect():
-                        st.session_state['ftp_connected'] = True
-                        st.success("✅ Conexión FTP establecida")
-                        
-                        # Procesar mes actual y anterior
-                        results = ftp_client.process_current_and_previous_month()
-                        
-                        # Verificar si se descargaron archivos
-                        total_files = sum(len(files) for files in results.values())
-                        if total_files > 0:
-                            st.session_state['files_downloaded'] = True
-                            st.session_state['success_message'] = f"Paso 1 completado: {total_files} archivos descargados"
-                        else:
-                            st.session_state['error_message'] = "No se pudieron descargar archivos"
+                    # Verificar si se descargaron archivos antes de marcar como completado
+                    if files_downloaded:
+                        st.session_state['files_downloaded'] = True
+                        st.session_state['success_message'] = "Paso 1 completado: Archivos descargados exitosamente"
                     else:
-                        st.session_state['error_message'] = "No se pudo conectar al servidor FTP"
-                    
-                    # Cerrar conexión FTP
-                    ftp_client.disconnect()
+                        st.warning("⚠️ No se descargaron archivos nuevos. Verifica la configuración.")
+                        st.session_state['files_downloaded'] = False
                 else:
                     st.session_state['error_message'] = "No se pudo conectar a SharePoint"
                 
@@ -360,7 +355,7 @@ with st.expander("🔍 Ver detalles del Paso 2", expanded=True):
     2. Subir archivos descargados
     3. Limpiar archivos según prioridad (.TxF > .TxR > .Tx2)
     
-    **Ubicación SharePoint**: `Documentos Compartidos/aenc/{año}/{mes}`
+    **Ubicación SharePoint**: `Documentos/aenc/{año}/{mes}`
     """)
     
     if st.button("🚀 Ejecutar Paso 2: Subir archivos", 
@@ -392,7 +387,7 @@ with st.expander("🔍 Ver detalles del Paso 2", expanded=True):
                     ftp_client = FTPClient()
                     previous_year, previous_month = ftp_client.get_previous_month(current_year, int(current_month))
                     
-                    # Procesar subida para mes anterior
+                    # Procesar subida para mes anterior primero
                     st.subheader(f"📅 Procesando mes anterior: {previous_month}/{previous_year}")
                     success_previous = sharepoint_client.process_month_upload(previous_year, previous_month)
                     

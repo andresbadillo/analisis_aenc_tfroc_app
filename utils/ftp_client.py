@@ -62,12 +62,19 @@ class FTPClient:
         
         Args:
             year (int): Año
-            month (str): Mes en formato MM
+            month (int or str): Mes (se convertirá a formato MM)
             
         Returns:
             str: Ruta del archivo en el servidor FTP
         """
-        return f"/INFORMACION_XM/USUARIOSK/RTQC/sic/comercia/{year}-{month}"
+        # Asegurar que el mes tenga dos dígitos
+        if isinstance(month, str):
+            month_int = int(month)
+        else:
+            month_int = month
+        
+        month_formatted = f"{month_int:02d}"
+        return f"/INFORMACION_XM/USUARIOSK/RTQC/sic/comercia/{year}-{month_formatted}"
     
     def list_files(self, year, month):
         """
@@ -75,7 +82,7 @@ class FTPClient:
         
         Args:
             year (int): Año
-            month (str): Mes en formato MM
+            month (int or str): Mes (se convertirá a formato MM)
             
         Returns:
             list: Lista de archivos disponibles
@@ -86,11 +93,8 @@ class FTPClient:
         
         try:
             file_path = self.get_file_path(year, month)
-            st.info(f"📁 Navegando a: {file_path}")
-            
             self.connection.cwd(file_path)
             files = self.connection.nlst()
-            
             st.success(f"✅ Encontrados {len(files)} archivos")
             return files
             
@@ -136,8 +140,6 @@ class FTPClient:
         try:
             with open(local_path, "wb") as f:
                 self.connection.retrbinary(f"RETR {filename}", f.write)
-            
-            st.success(f"✅ Archivo descargado: {filename}")
             return True
             
         except Exception as e:
@@ -150,54 +152,61 @@ class FTPClient:
         
         Args:
             year (int): Año
-            month (str): Mes en formato MM
+            month (int or str): Mes (se convertirá a formato MM)
             temp_folder (str): Carpeta temporal para almacenar archivos
             
         Returns:
             list: Lista de archivos descargados exitosamente
         """
-        # Crear carpeta temporal si no existe
-        os.makedirs(temp_folder, exist_ok=True)
-        
-        # Listar archivos disponibles
-        files = self.list_files(year, month)
-        if not files:
-            return []
-        
-        # Filtrar archivos por prioridad
-        aenc_files = self.filter_files_by_priority(files, "aenc")
-        tfroc_files = self.filter_files_by_priority(files, "tfroc")
-        
-        # Combinar archivos a descargar
-        files_to_download = aenc_files + tfroc_files
-        
-        if not files_to_download:
-            st.warning("⚠️ No se encontraron archivos AENC o TFROC para descargar")
-            return []
-        
-        st.info(f"📥 Descargando {len(files_to_download)} archivos...")
-        
-        downloaded_files = []
-        progress_bar = st.progress(0)
-        
-        for i, filename in enumerate(files_to_download):
-            local_path = os.path.join(temp_folder, filename)
+        try:
+            # Crear carpeta temporal si no existe
+            os.makedirs(temp_folder, exist_ok=True)
             
-            if self.download_file(filename, local_path):
-                downloaded_files.append(filename)
+            # Listar archivos disponibles
+            files = self.list_files(year, month)
             
-            # Actualizar barra de progreso
-            progress = (i + 1) / len(files_to_download)
-            progress_bar.progress(progress)
-        
-        progress_bar.empty()
-        
-        if downloaded_files:
-            st.success(f"✅ Descarga completada: {len(downloaded_files)} archivos")
-        else:
-            st.error("❌ No se pudo descargar ningún archivo")
-        
-        return downloaded_files
+            if not files:
+                st.warning(f"⚠️ No se encontraron archivos en el FTP para {year}-{month}")
+                return []
+            
+            # Filtrar archivos por prioridad
+            aenc_files = self.filter_files_by_priority(files, "aenc")
+            tfroc_files = self.filter_files_by_priority(files, "tfroc")
+            
+            # Combinar archivos a descargar
+            files_to_download = aenc_files + tfroc_files
+            
+            if not files_to_download:
+                st.warning(f"⚠️ No se encontraron archivos AENC o TFROC para descargar en {year}-{month}")
+                return []
+            
+            st.info(f"📥 Descargando {len(files_to_download)} archivos...")
+            
+            downloaded_files = []
+            progress_bar = st.progress(0)
+            
+            for i, filename in enumerate(files_to_download):
+                local_path = os.path.join(temp_folder, filename)
+                
+                if self.download_file(filename, local_path):
+                    downloaded_files.append(filename)
+                
+                # Actualizar barra de progreso
+                progress = (i + 1) / len(files_to_download)
+                progress_bar.progress(progress)
+            
+            progress_bar.empty()
+            
+            if downloaded_files:
+                st.success(f"✅ Descarga completada: {len(downloaded_files)} archivos")
+            else:
+                st.error("❌ No se pudo descargar ningún archivo")
+            
+            return downloaded_files
+            
+        except Exception as e:
+            st.error(f"❌ Error en download_month_files para {year}-{month}: {str(e)}")
+            return []
     
     def get_previous_month(self, year, month):
         """
