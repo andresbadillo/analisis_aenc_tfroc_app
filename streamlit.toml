@@ -6,6 +6,9 @@ headless = true
 port = 8501
 enableCORS = false
 enableXsrfProtection = false
+maxUploadSize = 200
+maxMessageSize = 200
+fileWatcherType = "auto"
 
 [browser]
 gatherUsageStats = false
@@ -15,3 +18,6 @@ primaryColor = "#64B43F"
 backgroundColor = "#FFFFFF"
 secondaryBackgroundColor = "#F0F2F6"
 textColor = "#262730"
+
+[client]
+showErrorDetails = true

@@ -17,34 +17,34 @@ class AnnualConsumptionUpdater:
         """Inicializa el actualizador de consumo anual."""
         pass
     
-    def load_annual_file(self, sharepoint_client):
+    def load_annual_file(self, sharepoint_client, year):
         """
         Carga el archivo de consumo anual desde SharePoint.
         
         Args:
             sharepoint_client: Cliente de SharePoint
+            year (int): Año
             
         Returns:
             pd.DataFrame: DataFrame del archivo anual
         """
         try:
             # Obtener carpeta de fact_consumos
-            folder_path = "Documentos Compartidos/aenc/fact_consumos"
+            folder_path = "aenc_pruebas/fact_consumos"
             files = sharepoint_client.list_files(folder_path)
             
             if not files:
                 st.warning("⚠️ No se encontraron archivos en la carpeta fact_consumos")
                 return None
             
-            # Buscar archivo de consumo anual
-            annual_files = [f for f in files if f['name'].startswith('consumos_') and f['name'].endswith('.csv')]
+            # Buscar archivo de consumo anual específico del año
+            file_name = f"consumos_{year}.csv"
+            annual_file = next((f for f in files if f['name'] == file_name), None)
             
-            if not annual_files:
-                st.warning("⚠️ No se encontró archivo de consumo anual")
+            if not annual_file:
+                st.warning(f"⚠️ No se encontró archivo de consumo anual: {file_name}")
                 return None
             
-            # Tomar el primer archivo encontrado (asumiendo que hay uno por año)
-            annual_file = annual_files[0]
             file_content = sharepoint_client.download_file_content(folder_path, annual_file['name'])
             
             if not file_content:
@@ -53,7 +53,7 @@ class AnnualConsumptionUpdater:
             # Leer el archivo CSV
             df = pd.read_csv(io.BytesIO(file_content), sep=",", encoding='utf-8-sig')
             
-            st.success(f"✅ Archivo anual cargado: {annual_file['name']}")
+            st.info(f"📁 Archivo anual: {annual_file['name']} ({len(df)} registros)")
             return df
             
         except Exception as e:
@@ -97,7 +97,7 @@ class AnnualConsumptionUpdater:
             # Leer el archivo CSV
             df = pd.read_csv(io.BytesIO(file_content), sep=",", encoding='utf-8-sig')
             
-            st.success(f"✅ Archivo mensual cargado: {monthly_file['name']}")
+            st.info(f"📁 Archivo mensual: {monthly_file['name']} ({len(df)} registros)")
             return df
             
         except Exception as e:
@@ -118,7 +118,7 @@ class AnnualConsumptionUpdater:
         """
         try:
             # Cargar archivo anual
-            annual_df = self.load_annual_file(sharepoint_client)
+            annual_df = self.load_annual_file(sharepoint_client, year)
             if annual_df is None:
                 return False
             
@@ -135,7 +135,6 @@ class AnnualConsumptionUpdater:
             annual_df = annual_df[~((annual_df['FECHA'].dt.year == year) & (annual_df['FECHA'].dt.month == int(month)))]
             
             # Concatenar datos
-            st.info("🔄 Concatenando datos...")
             updated_df = pd.concat([annual_df, monthly_df], ignore_index=True)
             
             # Ordenar por fecha y código de frontera
@@ -151,7 +150,7 @@ class AnnualConsumptionUpdater:
             )
             
             if success:
-                st.success(f"✅ Archivo anual actualizado exitosamente: {file_name}")
+                st.info(f"📤 Archivo anual actualizado: {file_name} ({len(updated_df)} registros)")
                 return True
             else:
                 st.error("❌ Error al subir archivo anual actualizado")

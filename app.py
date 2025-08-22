@@ -528,8 +528,42 @@ with st.expander("🔍 Ver detalles del Paso 4", expanded=True):
     4. Concatenar datos actualizados
     5. Subir archivo actualizado
     
-    **Ubicación**: `Documentos Compartidos/aenc/fact_consumos/consumos_{año}.csv`
+    **Ubicación**: `Documentos/aenc/fact_consumos/consumos_{año}.csv`
     """)
+    
+    # Selectores de año y mes (reutilizar los del Paso 3)
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Selector de año (últimos 5 años + año actual)
+        current_year = datetime.now().year
+        year_options = list(range(current_year - 4, current_year + 1))
+        selected_year_step4 = st.selectbox(
+            "📅 Seleccionar Año:",
+            options=year_options,
+            index=len(year_options) - 1,  # Por defecto año actual
+            help="Selecciona el año para actualizar el archivo anual",
+            key="year_step4"
+        )
+    
+    with col2:
+        # Selector de mes
+        month_options = [
+            ("Enero", "01"), ("Febrero", "02"), ("Marzo", "03"), ("Abril", "04"),
+            ("Mayo", "05"), ("Junio", "06"), ("Julio", "07"), ("Agosto", "08"),
+            ("Septiembre", "09"), ("Octubre", "10"), ("Noviembre", "11"), ("Diciembre", "12")
+        ]
+        selected_month_name_step4, selected_month_step4 = st.selectbox(
+            "📅 Seleccionar Mes:",
+            options=month_options,
+            index=datetime.now().month - 1,  # Por defecto mes actual
+            format_func=lambda x: x[0],  # Mostrar nombre del mes
+            help="Selecciona el mes para actualizar el archivo anual",
+            key="month_step4"
+        )
+    
+    # Mostrar información de selección
+    st.info(f"📋 **Actualización seleccionada**: {selected_month_name_step4} {selected_year_step4}")
     
     if st.button("🚀 Ejecutar Paso 4: Actualizar consumo anual", 
                 disabled=not st.session_state['files_processed'],
@@ -551,19 +585,15 @@ with st.expander("🔍 Ver detalles del Paso 4", expanded=True):
                 
                 # Probar conexión a SharePoint
                 if sharepoint_client.test_connection():
-                    # Obtener año y mes actual
-                    current_year = datetime.now().year
-                    current_month = f"{datetime.now().month:02d}"
-                    
-                    # Actualizar archivo de consumo anual
-                    success = annual_updater.update_annual_consumption(sharepoint_client, current_year, current_month)
+                    # Actualizar archivo de consumo anual con los valores seleccionados
+                    success = annual_updater.update_annual_consumption(sharepoint_client, selected_year_step4, selected_month_step4)
                     
                     if success:
-                        st.session_state['success_message'] = "Paso 4 completado: Archivo anual actualizado exitosamente"
+                        st.session_state['success_message'] = f"✅ Paso 4 completado: Archivo anual {selected_year_step4} actualizado con datos de {selected_month_name_step4}"
                     else:
-                        st.session_state['error_message'] = "Error al actualizar archivo anual"
+                        st.session_state['error_message'] = f"Error: No se pudo actualizar el archivo anual {selected_year_step4}"
                 else:
-                    st.session_state['error_message'] = "No se pudo conectar a SharePoint"
+                    st.session_state['error_message'] = "Error: No se pudo conectar a SharePoint"
                 
             except Exception as e:
                 st.session_state['error_message'] = f"Error en Paso 4: {str(e)}"
@@ -584,15 +614,15 @@ if st.session_state['files_processed']:
     - ✅ Archivo de consumo anual actualizado
     
     Los archivos procesados están disponibles en SharePoint en las siguientes ubicaciones:
-    - `Documentos Compartidos/aenc/{año}/{mes}/` - Archivos mensuales
-    - `Documentos Compartidos/aenc/fact_consumos/` - Archivo anual consolidado
+    - `aenc_pruebas/{año}/{mes}/` - Archivos mensuales
+    - `aenc_pruebas/fact_consumos/` - Archivo anual consolidado
     """)
 
 # --- FOOTER ---
 st.markdown("---")
 st.markdown("""
 <div class="footer">
-    <p>Desarrollado por RUITOQUE E.S.P | Análisis AENC y TFROC</p>
+    <p>Desarrollado por andresbadillo.co</p>
     <p>Versión 1.0 | Última actualización: 2025</p>
 </div>
 """, unsafe_allow_html=True)
