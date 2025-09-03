@@ -650,8 +650,8 @@ if (st.session_state['files_downloaded'] and
         - ✅ Archivo de consumo anual actualizado
         
         Los archivos procesados están disponibles en SharePoint en las siguientes ubicaciones:
-        - `aenc_pruebas/{año}/{mes}/` - Archivos mensuales
-        - `aenc_pruebas/fact_consumos/` - Archivo anual consolidado
+        - `aenc/{año}/{mes}/` - Archivos mensuales
+        - `aenc/fact_consumos/` - Archivo anual consolidado
         """)
     else:
         st.markdown("## 📋 Estado del Proceso")

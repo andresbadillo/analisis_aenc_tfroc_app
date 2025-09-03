@@ -30,7 +30,7 @@ class AnnualConsumptionUpdater:
         """
         try:
             # Obtener carpeta de fact_consumos
-            folder_path = "aenc_pruebas/fact_consumos"
+            folder_path = "aenc/fact_consumos"
             files = sharepoint_client.list_files(folder_path)
             
             if not files:

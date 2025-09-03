@@ -174,7 +174,7 @@ class SharePointClient:
             else:
                 month_int = month
             
-            folder_path = f"aenc_pruebas/{year}/{month_int:02d}"
+            folder_path = f"aenc/{year}/{month_int:02d}"
             
             st.info(f"🔍 Verificando carpeta: {folder_path}")
             
@@ -429,7 +429,7 @@ class SharePointClient:
         Returns:
             str: Ruta de la carpeta en SharePoint
         """
-        return f"aenc_pruebas/{year}/{month}"
+        return f"aenc/{year}/{month}"
     
     def process_month_upload(self, year, month, local_folder="archivos_descargados"):
         """
@@ -548,7 +548,7 @@ class SharePointClient:
             bool: True si la actualización es exitosa, False en caso contrario
         """
         try:
-            folder_path = "aenc_pruebas/fact_consumos"
+            folder_path = "aenc/fact_consumos"
             file_name = f"consumos_{year}.csv"
             site_id = self.get_site_id()
             if not site_id:
