@@ -249,7 +249,7 @@ class DataProcessor:
     
     def process_month_data(self, sharepoint_client, year, month):
         """
-        Procesa todos los datos de un mes específico.
+        Procesa todos los datos de un mes específico de manera optimizada.
         
         Args:
             sharepoint_client: Cliente de SharePoint
@@ -277,16 +277,21 @@ class DataProcessor:
                 st.error("❌ La cantidad de archivos AENC no coincide con la cantidad de archivos TFROC")
                 return None
             
-            st.info(f"📁 Archivos en carpeta: {len(aenc_files)} AENC y {len(tfroc_files)} TFROC")
+            st.info(f"📁 Archivos en carpeta: {len(aenc_files)} AENC y {len(aenc_files)} TFROC")
             
-            # Inicializar DataFrames consolidados
-            consolidated_aenc_df = pd.DataFrame()
-            consolidated_df = pd.DataFrame()
+            # Inicializar listas para procesamiento en lotes
+            aenc_dataframes = []
+            consumos_dataframes = []
             
-            # Procesar archivos día a día
+            # Procesar archivos día a día con progreso detallado
+            st.info("🔄 Iniciando procesamiento de archivos...")
             progress_bar = st.progress(0)
+            progress_text = st.empty()
             
             for i, aenc_file in enumerate(aenc_files):
+                # Mostrar progreso detallado
+                progress_text.text(f"📊 Procesando día {i+1}/{len(aenc_files)}: {aenc_file['name']}")
+                
                 # Extraer día del nombre del archivo
                 day = Path(aenc_file['name']).stem[-4:]
                 date = f"{day[2:]}-{day[:2]}-{year}"
@@ -294,6 +299,7 @@ class DataProcessor:
                 # Buscar archivo TFROC correspondiente
                 tfroc_file = next((f for f in tfroc_files if day in f['name']), None)
                 if tfroc_file is None:
+                    st.warning(f"⚠️ No se encontró archivo TFROC correspondiente para {aenc_file['name']}")
                     continue
                 
                 # Obtener contenido de los archivos
@@ -303,27 +309,40 @@ class DataProcessor:
                 # Procesar archivo AENC
                 aenc_df = self.process_aenc_file(aenc_content, date)
                 if aenc_df is not None:
-                    consolidated_aenc_df = pd.concat([consolidated_aenc_df, aenc_df], ignore_index=True)
+                    aenc_dataframes.append(aenc_df)
                 
                 # Procesar y unir datos
                 tfroc_df = self.process_tfroc_file(tfroc_content)
                 if tfroc_df is not None and aenc_df is not None:
                     daily_df = self.merge_and_process_data(aenc_df, tfroc_df, date)
                     if daily_df is not None:
-                        consolidated_df = pd.concat([consolidated_df, daily_df], ignore_index=True)
+                        consumos_dataframes.append(daily_df)
                 
                 # Actualizar barra de progreso
                 progress = (i + 1) / len(aenc_files)
                 progress_bar.progress(progress)
             
             progress_bar.empty()
+            progress_text.empty()
             
-            # Ordenar DataFrames
-            if not consolidated_aenc_df.empty:
+            # Consolidar DataFrames de manera eficiente
+            st.info("🔄 Consolidando datos procesados...")
+            
+            if aenc_dataframes:
+                consolidated_aenc_df = pd.concat(aenc_dataframes, ignore_index=True)
                 consolidated_aenc_df = consolidated_aenc_df.sort_values(by=["FECHA", "CODIGO FRONTERA"])
+                st.success(f"✅ AENC consolidado: {len(consolidated_aenc_df)} registros")
+            else:
+                consolidated_aenc_df = pd.DataFrame()
+                st.warning("⚠️ No se pudieron procesar archivos AENC")
             
-            if not consolidated_df.empty:
+            if consumos_dataframes:
+                consolidated_df = pd.concat(consumos_dataframes, ignore_index=True)
                 consolidated_df = consolidated_df.sort_values(by=["FECHA", "CODIGO FRONTERA"])
+                st.success(f"✅ Consumos consolidados: {len(consolidated_df)} registros")
+            else:
+                consolidated_df = pd.DataFrame()
+                st.warning("⚠️ No se pudieron procesar archivos de consumos")
             
             return {
                 'aenc_consolidated': consolidated_aenc_df,
@@ -336,7 +355,7 @@ class DataProcessor:
     
     def generate_output_files(self, processed_data, year, month):
         """
-        Genera los archivos de salida CSV.
+        Genera los archivos de salida CSV con progreso detallado.
         
         Args:
             processed_data (dict): Datos procesados
@@ -348,9 +367,11 @@ class DataProcessor:
         """
         try:
             output_files = {}
+            st.info("🔄 Generando archivos de salida...")
             
             # Generar archivo AENC consolidado
             if not processed_data['aenc_consolidated'].empty:
+                st.info("📄 Generando archivo AENC consolidado...")
                 aenc_file_name = f"aenc_consolidado_{month}_{year}.csv"
                 aenc_csv = processed_data['aenc_consolidated'].to_csv(
                     index=False, sep=",", encoding='utf-8-sig'
@@ -359,9 +380,13 @@ class DataProcessor:
                     'name': aenc_file_name,
                     'content': aenc_csv.encode('utf-8-sig')
                 }
+                st.success(f"✅ Archivo AENC generado: {aenc_file_name}")
+            else:
+                st.warning("⚠️ No hay datos AENC para generar archivo")
             
             # Generar archivo de consumos consolidado
             if not processed_data['consumos_consolidated'].empty:
+                st.info("📄 Generando archivo de consumos consolidado...")
                 consumos_file_name = f"consumos_{month}_{year}.csv"
                 consumos_csv = processed_data['consumos_consolidated'].to_csv(
                     index=False, sep=",", encoding='utf-8-sig'
@@ -370,8 +395,10 @@ class DataProcessor:
                     'name': consumos_file_name,
                     'content': consumos_csv.encode('utf-8-sig')
                 }
+                st.success(f"✅ Archivo de consumos generado: {consumos_file_name}")
                 
                 # Generar archivo de total de consumo por frontera
+                st.info("📄 Generando archivo de total de consumo por frontera...")
                 total_consumo_df = processed_data['consumos_consolidated'].groupby(
                     ["CODIGO FRONTERA", "NOMBRE FRONTERA", "TIPO DE AGRUPACIÓN", "IMPO - EXPO"], 
                     as_index=False
@@ -385,7 +412,11 @@ class DataProcessor:
                     'name': total_consumo_file_name,
                     'content': total_consumo_csv.encode('utf-8-sig')
                 }
+                st.success(f"✅ Archivo de total de consumo generado: {total_consumo_file_name}")
+            else:
+                st.warning("⚠️ No hay datos de consumos para generar archivos")
             
+            st.success(f"🎉 Generación de archivos completada: {len(output_files)} archivos creados")
             return output_files
             
         except Exception as e:
