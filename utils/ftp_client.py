@@ -180,7 +180,12 @@ class FTPClient:
                 st.warning(f"⚠️ No se encontraron archivos AENC o TFROC para descargar en {year}-{month}")
                 return []
             
-            st.info(f"📥 Descargando {len(files_to_download)} archivos...")
+            # Mostrar información consolidada
+            st.info(f"📥 Descargando {len(files_to_download)} archivos del FTP ({year}-{month})")
+            if aenc_files:
+                st.info(f"   • AENC: {len(aenc_files)} archivos")
+            if tfroc_files:
+                st.info(f"   • TFROC: {len(tfroc_files)} archivos")
             
             downloaded_files = []
             progress_bar = st.progress(0)

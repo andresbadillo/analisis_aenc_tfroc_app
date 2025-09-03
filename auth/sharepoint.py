@@ -42,22 +42,18 @@ class SharePointClient:
             hostname = self.site_url.replace("https://", "").replace("http://", "")
             url = f"https://graph.microsoft.com/v1.0/sites/{hostname}:/sites/{self.site_name}"
             
-            st.info(f"🔍 Intentando conectar a: {url}")
-            
             response = requests.get(url, headers=self.headers)
             
             if response.status_code == 200:
                 site_data = response.json()
                 site_id = site_data.get('id')
                 if site_id:
-                    st.success(f"✅ Sitio encontrado: {site_id}")
                     return site_id
                 else:
                     st.error("❌ No se pudo obtener el ID del sitio")
                     return None
             else:
                 st.error(f"❌ Error al obtener ID del sitio: {response.status_code}")
-                st.error(f"Respuesta: {response.text}")
                 
                 # Proporcionar información de diagnóstico
                 if response.status_code == 401:
@@ -186,7 +182,20 @@ class SharePointClient:
             aenc_files = self.check_files_by_priority(folder_path, "aenc")
             tfroc_files = self.check_files_by_priority(folder_path, "tfroc")
             
-            st.info(f"📋 Archivos encontrados - AENC: {aenc_files}, TFROC: {tfroc_files}")
+            # Mostrar información consolidada de archivos encontrados
+            st.info(f"📋 Archivos encontrados en SharePoint:")
+            if aenc_files['txf']:
+                st.info(f"   • AENC .TxF: {len(aenc_files['txf'])} archivos")
+            if aenc_files['txr']:
+                st.info(f"   • AENC .TxR: {len(aenc_files['txr'])} archivos")
+            if aenc_files['tx2']:
+                st.info(f"   • AENC .Tx2: {len(aenc_files['tx2'])} archivos")
+            if tfroc_files['txf']:
+                st.info(f"   • TFROC .TxF: {len(tfroc_files['txf'])} archivos")
+            if tfroc_files['txr']:
+                st.info(f"   • TFROC .TxR: {len(tfroc_files['txr'])} archivos")
+            if tfroc_files['tx2']:
+                st.info(f"   • TFROC .Tx2: {len(tfroc_files['tx2'])} archivos")
             
             # Determinar si necesita descargar basándose en la jerarquía
             needs_download = False
@@ -194,30 +203,18 @@ class SharePointClient:
             # Si hay archivos .TxF, no necesita descargar
             if aenc_files['txf'] or tfroc_files['txf']:
                 st.success(f"✅ Archivos .TxF encontrados en SharePoint para {year}-{month_int:02d}")
-                if aenc_files['txf']:
-                    st.info(f"AENC .TxF: {', '.join(aenc_files['txf'])}")
-                if tfroc_files['txf']:
-                    st.info(f"TFROC .TxF: {', '.join(tfroc_files['txf'])}")
                 st.info("🔄 NO necesita descargar del FTP")
                 return True
             
             # Si no hay .TxF pero hay .TxR, verificar si son suficientes
             elif aenc_files['txr'] or tfroc_files['txr']:
                 st.warning(f"⚠️ Solo archivos .TxR encontrados en SharePoint para {year}-{month_int:02d}")
-                if aenc_files['txr']:
-                    st.info(f"AENC .TxR: {', '.join(aenc_files['txr'])}")
-                if tfroc_files['txr']:
-                    st.info(f"TFROC .TxR: {', '.join(tfroc_files['txr'])}")
                 st.info("🔄 Descargando archivos del FTP para obtener versiones .TxF...")
                 needs_download = True
             
             # Si solo hay .Tx2 o no hay archivos, necesita descargar
             elif aenc_files['tx2'] or tfroc_files['tx2']:
                 st.warning(f"⚠️ Solo archivos .Tx2 encontrados en SharePoint para {year}-{month_int:02d}")
-                if aenc_files['tx2']:
-                    st.info(f"AENC .Tx2: {', '.join(aenc_files['tx2'])}")
-                if tfroc_files['tx2']:
-                    st.info(f"TFROC .Tx2: {', '.join(tfroc_files['tx2'])}")
                 st.info("🔄 Descargando archivos del FTP para obtener versiones .TxF...")
                 needs_download = True
             
@@ -226,7 +223,6 @@ class SharePointClient:
                 st.info("✅ Procediendo con la descarga del FTP...")
                 needs_download = True
             
-            st.info(f"🔄 Retornando {not needs_download} (needs_download={needs_download})")
             st.info(f"🔍 RESULTADO: {'NO descargar' if not needs_download else 'SÍ descargar'}")
             return not needs_download
                 
@@ -265,7 +261,6 @@ class SharePointClient:
             response = requests.put(url, data=file_content, headers=headers)
             
             if response.status_code in [200, 201]:
-                st.success(f"✅ Archivo subido: {file_name}")
                 return True
             else:
                 st.error(f"❌ Error al subir {file_name}: {response.status_code}")
@@ -302,6 +297,63 @@ class SharePointClient:
             progress_bar.progress(progress)
         
         progress_bar.empty()
+        return uploaded_count
+    
+    def upload_files_batch(self, folder_path, local_folder, file_names, batch_size=10):
+        """
+        Sube archivos en lotes para mejorar la eficiencia.
+        
+        Args:
+            folder_path (str): Ruta de la carpeta en SharePoint
+            local_folder (str): Carpeta local con los archivos
+            file_names (list): Lista de nombres de archivos a subir
+            batch_size (int): Tamaño del lote para procesar
+            
+        Returns:
+            int: Número de archivos subidos exitosamente
+        """
+        uploaded_count = 0
+        failed_files = []
+        total_batches = (len(file_names) + batch_size - 1) // batch_size
+        
+        # Mostrar información consolidada
+        st.info(f"📤 Subiendo {len(file_names)} archivos en {total_batches} lotes...")
+        
+        progress_bar = st.progress(0)
+        
+        for batch_num in range(total_batches):
+            start_idx = batch_num * batch_size
+            end_idx = min(start_idx + batch_size, len(file_names))
+            batch_files = file_names[start_idx:end_idx]
+            
+            # Procesar lote actual
+            for i, file_name in enumerate(batch_files):
+                local_path = os.path.join(local_folder, file_name)
+                
+                if os.path.exists(local_path):
+                    if self.upload_file(folder_path, local_path, file_name):
+                        uploaded_count += 1
+                    else:
+                        failed_files.append(file_name)
+                else:
+                    failed_files.append(file_name)
+                
+                # Actualizar barra de progreso
+                overall_progress = (start_idx + i + 1) / len(file_names)
+                progress_bar.progress(overall_progress)
+            
+            # Mostrar progreso del lote
+            if batch_num < total_batches - 1:
+                st.info(f"📦 Lote {batch_num + 1}/{total_batches} completado")
+        
+        progress_bar.empty()
+        
+        # Mostrar resumen consolidado
+        if failed_files:
+            st.warning(f"⚠️ {len(failed_files)} archivos fallaron en la subida")
+        else:
+            st.success(f"✅ Todos los archivos subidos exitosamente")
+        
         return uploaded_count
     
     def clean_files_by_priority(self, folder_path, uploaded_files):
@@ -427,12 +479,14 @@ class SharePointClient:
         files_to_upload = aenc_files + tfroc_files
         
         if not files_to_upload:
-            st.warning(f"⚠️ No se encontraron archivos para el mes {month} en {local_folder}")
-            return False
+            st.info(f"ℹ️ No hay archivos para subir del mes {month} en {local_folder}")
+            st.info("   Esto es normal cuando los archivos aún no están disponibles en el FTP")
+            return True  # No es un error, es un caso normal
         
         st.info(f"📤 Subiendo {len(files_to_upload)} archivos a SharePoint...")
         
-        uploaded_count = self.upload_files_from_folder(folder_path, local_folder, files_to_upload)
+        # Usar carga en lotes para mejor eficiencia
+        uploaded_count = self.upload_files_batch(folder_path, local_folder, files_to_upload, batch_size=15)
         
         if uploaded_count > 0:
             # Limpiar archivos según prioridad

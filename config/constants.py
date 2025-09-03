@@ -15,6 +15,7 @@ INITIAL_SESSION_STATE = {
     'sharepoint_connected': False,
     'files_downloaded': False,
     'files_processed': False,
+    'annual_consumption_updated': False,  # Nuevo estado para el Paso 4
     'current_step': 1,
     'error_message': None,
     'success_message': None,
