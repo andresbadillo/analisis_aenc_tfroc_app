@@ -146,7 +146,18 @@ class FTPClient:
             st.error(f"❌ Error al descargar {filename}: {str(e)}")
             return False
     
-    def download_month_files(self, year, month, temp_folder="archivos_descargados"):
+    def download_month_files(self, year, month, temp_folder=None):
+        # Si no se especifica temp_folder, usar la ruta por defecto
+        if temp_folder is None:
+            # Usar ruta fija en lugar de importar desde app.py
+            downloads_path = os.path.expanduser("~/Downloads")
+            if not os.path.exists(downloads_path):
+                # Fallback para Windows si no encuentra Downloads
+                downloads_path = os.path.expanduser("~/OneDrive/Downloads")
+                if not os.path.exists(downloads_path):
+                    # Fallback final: carpeta del proyecto
+                    downloads_path = os.getcwd()
+            temp_folder = os.path.join(downloads_path, "archivos_descargados")
         """
         Descarga los archivos AENC y TFROC para un mes específico.
         

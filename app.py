@@ -50,18 +50,37 @@ def reset_session():
 
 def clean_temp_folder():
     """Limpia la carpeta temporal de archivos descargados."""
-    temp_folder = "archivos_descargados"
+    temp_folder = get_temp_folder_path()
     if os.path.exists(temp_folder):
         try:
-            for filename in os.listdir(temp_folder):
-                file_path = os.path.join(temp_folder, filename)
-                if os.path.isfile(file_path) or os.path.islink(file_path):
-                    os.unlink(file_path)
-                elif os.path.isdir(file_path):
-                    shutil.rmtree(file_path)
-            st.success("✅ Carpeta temporal limpiada exitosamente")
+            shutil.rmtree(temp_folder)
+            st.success("✅ Carpeta temporal eliminada exitosamente")
         except Exception as e:
-            st.error(f"❌ Error al limpiar carpeta temporal: {str(e)}")
+            st.error(f"❌ Error al eliminar carpeta temporal: {str(e)}")
+
+def get_temp_folder_path():
+    """Obtiene la ruta de la carpeta temporal en Descargas."""
+    downloads_path = os.path.expanduser("~/Downloads")
+    if not os.path.exists(downloads_path):
+        # Fallback para Windows si no encuentra Downloads
+        downloads_path = os.path.expanduser("~/OneDrive/Downloads")
+        if not os.path.exists(downloads_path):
+            # Fallback final: carpeta del proyecto
+            downloads_path = os.getcwd()
+    
+    return os.path.join(downloads_path, "archivos_descargados")
+
+def create_temp_folder():
+    """Crea la carpeta temporal en Descargas."""
+    temp_folder = get_temp_folder_path()
+    if not os.path.exists(temp_folder):
+        try:
+            os.makedirs(temp_folder)
+            st.info(f"📁 Carpeta temporal creada: {temp_folder}")
+        except Exception as e:
+            st.error(f"❌ Error al crear carpeta temporal: {str(e)}")
+            return False
+    return True
 
 # --- SIDEBAR CON INFORMACIÓN ---
 with st.sidebar:
@@ -96,11 +115,14 @@ with st.sidebar:
     st.header("🔧 Acciones")
     
     # Botón para limpiar carpeta temporal
-    if st.button("🗑️ Limpiar archivos temporales"):
+    if st.button("🗑️ Limpiar archivos temporales", key="clean_temp_files"):
         clean_temp_folder()
     
+    # Mostrar ubicación de la carpeta temporal (solo texto, no función)
+    st.info("📁 Carpeta temporal: Descargas/archivos_descargados")
+    
     # Botón para reiniciar sesión
-    if st.button("🔄 Reiniciar aplicación"):
+    if st.button("🔄 Reiniciar aplicación", key="reset_app"):
         reset_session()
         st.rerun()
     
@@ -142,7 +164,7 @@ with st.sidebar:
         st.info("Sesión activa con Azure AD")
         
         # Botón para cerrar sesión
-        if st.button("🚪 Cerrar sesión"):
+        if st.button("🚪 Cerrar sesión", key="logout"):
             azure_auth.logout()
     else:
         st.error("❌ Usuario no autenticado")
@@ -221,10 +243,18 @@ with st.expander("🔍 Ver detalles del Paso 1", expanded=True):
     
     if st.button("🚀 Ejecutar Paso 1: Descargar archivos", 
                 disabled=st.session_state['files_downloaded'],
-                type="primary"):
+                type="primary",
+                key="execute_step1"):
         
         with st.spinner("🔄 Ejecutando Paso 1..."):
             try:
+                # Crear carpeta temporal en Descargas
+                if not create_temp_folder():
+                    st.error("❌ No se pudo crear la carpeta temporal")
+                    st.session_state['error_message'] = "Error al crear carpeta temporal"
+                    st.rerun()
+                    st.stop()
+                
                 # Obtener token de autenticación
                 token = azure_auth.get_token()
                 if not token:
@@ -376,7 +406,8 @@ with st.expander("🔍 Ver detalles del Paso 2", expanded=True):
     
     if st.button("🚀 Ejecutar Paso 2: Subir archivos", 
                 disabled=not st.session_state['files_downloaded'] or st.session_state['sharepoint_connected'],
-                type="primary"):
+                type="primary",
+                key="execute_step2"):
         
         with st.spinner("🔄 Ejecutando Paso 2..."):
             try:
@@ -488,7 +519,8 @@ with st.expander("🔍 Ver detalles del Paso 3", expanded=True):
     
     if st.button("🚀 Ejecutar Paso 3: Procesar datos", 
                 disabled=not st.session_state['sharepoint_connected'] or st.session_state['files_processed'],
-                type="primary"):
+                type="primary",
+                key="execute_step3"):
         
         with st.spinner("🔄 Ejecutando Paso 3..."):
             try:
@@ -595,7 +627,8 @@ with st.expander("🔍 Ver detalles del Paso 4", expanded=True):
     
     if st.button("🚀 Ejecutar Paso 4: Actualizar consumo anual", 
                 disabled=not st.session_state['files_processed'],
-                type="primary"):
+                type="primary",
+                key="execute_step4"):
         
         with st.spinner("🔄 Ejecutando Paso 4..."):
             try:
@@ -620,6 +653,10 @@ with st.expander("🔍 Ver detalles del Paso 4", expanded=True):
                         st.session_state['files_processed'] = True  # Asegurar que esté marcado como procesado
                         st.session_state['annual_consumption_updated'] = True  # Nuevo estado para el Paso 4
                         st.session_state['success_message'] = f"✅ Paso 4 completado: Archivo anual {selected_year_step4} actualizado con datos de {selected_month_name_step4}"
+                        
+                        # Limpiar carpeta temporal después de completar todo el proceso
+                        st.info("🧹 Limpiando archivos temporales...")
+                        clean_temp_folder()
                     else:
                         st.session_state['error_message'] = f"Error: No se pudo actualizar el archivo anual {selected_year_step4}"
                 else:
@@ -672,7 +709,7 @@ if (st.session_state['files_downloaded'] and
 st.markdown("---")
 st.markdown("""
 <div class="footer">
-    <p>Desarrollado por andresbadillo.co</p>
+    <p>Desarrollado por <a href="https://www.andresbadillo.co/" target="_blank" style="color: #00ff88; text-decoration: none;">andresbadillo.co</a></p>
     <p>Versión 1.0 | Última actualización: 09-2025</p>
 </div>
 """, unsafe_allow_html=True)

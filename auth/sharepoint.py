@@ -431,7 +431,18 @@ class SharePointClient:
         """
         return f"aenc/{year}/{month}"
     
-    def process_month_upload(self, year, month, local_folder="archivos_descargados"):
+    def process_month_upload(self, year, month, local_folder=None):
+        # Si no se especifica local_folder, usar la ruta por defecto
+        if local_folder is None:
+            # Usar ruta fija en lugar de importar desde app.py
+            downloads_path = os.path.expanduser("~/Downloads")
+            if not os.path.exists(downloads_path):
+                # Fallback para Windows si no encuentra Downloads
+                downloads_path = os.path.expanduser("~/OneDrive/Downloads")
+                if not os.path.exists(downloads_path):
+                    # Fallback final: carpeta del proyecto
+                    downloads_path = os.getcwd()
+            local_folder = os.path.join(downloads_path, "archivos_descargados")
         """
         Procesa la subida de archivos para un mes específico.
         
