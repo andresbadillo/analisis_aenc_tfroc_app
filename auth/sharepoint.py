@@ -163,9 +163,13 @@ class SharePointClient:
     
     def verify_files_before_download(self, year, month):
         """
-        Verifica si ya existen archivos en SharePoint antes de descargar del FTP
-        Sigue la jerarquía: .TxF > .TxR > .Tx2
-        Retorna True si existen archivos de alta prioridad, False si necesita descargar
+        Verifica qué archivos existen en SharePoint y determina la estrategia de descarga.
+        
+        LÓGICA CORREGIDA:
+        - Si hay archivos .TxF en SharePoint: NO descargar nada
+        - Si hay archivos .TxR en SharePoint: Verificar FTP para .TxF
+        - Si hay archivos .Tx2 en SharePoint: Descargar del FTP
+        - Si no hay archivos: Descargar del FTP
         """
         try:
             # Convertir month a entero si es string
@@ -197,38 +201,49 @@ class SharePointClient:
             if tfroc_files['tx2']:
                 st.info(f"   • TFROC .Tx2: {len(tfroc_files['tx2'])} archivos")
             
-            # Determinar si necesita descargar basándose en la jerarquía
-            needs_download = False
+            # LÓGICA CORREGIDA: Determinar estrategia de descarga
+            download_strategy = "none"  # none, check_ftp, download
             
             # Si hay archivos .TxF, no necesita descargar
             if aenc_files['txf'] or tfroc_files['txf']:
                 st.success(f"✅ Archivos .TxF encontrados en SharePoint para {year}-{month_int:02d}")
                 st.info("🔄 NO necesita descargar del FTP")
-                return True
+                download_strategy = "none"
             
-            # Si no hay .TxF pero hay .TxR, verificar si son suficientes
+            # Si hay archivos .TxR pero no .TxF, verificar FTP para .TxF
             elif aenc_files['txr'] or tfroc_files['txr']:
-                st.warning(f"⚠️ Solo archivos .TxR encontrados en SharePoint para {year}-{month_int:02d}")
-                st.info("🔄 Descargando archivos del FTP para obtener versiones .TxF...")
-                needs_download = True
+                st.warning(f"⚠️ Archivos .TxR encontrados en SharePoint para {year}-{month_int:02d}")
+                st.info("🔄 Verificando FTP para archivos .TxF...")
+                download_strategy = "check_ftp"
             
-            # Si solo hay .Tx2 o no hay archivos, necesita descargar
-            elif aenc_files['tx2'] or tfroc_files['tx2']:
-                st.warning(f"⚠️ Solo archivos .Tx2 encontrados en SharePoint para {year}-{month_int:02d}")
-                st.info("🔄 Descargando archivos del FTP para obtener versiones .TxF...")
-                needs_download = True
-            
+            # Si solo hay .Tx2 o no hay archivos, descargar del FTP
             else:
-                st.info(f"📁 No se encontraron archivos en SharePoint para {year}-{month_int:02d}")
-                st.info("✅ Procediendo con la descarga del FTP...")
-                needs_download = True
+                if aenc_files['tx2'] or tfroc_files['tx2']:
+                    st.warning(f"⚠️ Solo archivos .Tx2 encontrados en SharePoint para {year}-{month_int:02d}")
+                    st.info("🔄 Descargando archivos del FTP...")
+                else:
+                    st.info(f"📁 No se encontraron archivos en SharePoint para {year}-{month_int:02d}")
+                    st.info("🔄 Descargando archivos del FTP...")
+                download_strategy = "download"
             
-            st.info(f"🔍 RESULTADO: {'NO descargar' if not needs_download else 'SÍ descargar'}")
-            return not needs_download
+            # Retornar información para que el cliente FTP tome la decisión
+            return {
+                'strategy': download_strategy,
+                'sharepoint_files': {
+                    'aenc': aenc_files,
+                    'tfroc': tfroc_files
+                }
+            }
                 
         except Exception as e:
             st.error(f"Error al verificar archivos en SharePoint: {e}")
-            return False
+            return {
+                'strategy': 'download',
+                'sharepoint_files': {
+                    'aenc': {'txf': [], 'txr': [], 'tx2': []},
+                    'tfroc': {'txf': [], 'txr': [], 'tx2': []}
+                }
+            }
     
     def upload_file(self, folder_path, file_path, file_name):
         """

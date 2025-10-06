@@ -105,6 +105,7 @@ class FTPClient:
     def filter_files_by_priority(self, files, prefix):
         """
         Filtra archivos por prefijo y prioridad de versión.
+        SOLO archivos aenc y tfroc
         
         Args:
             files (list): Lista de archivos
@@ -113,6 +114,11 @@ class FTPClient:
         Returns:
             list: Lista de archivos filtrados por prioridad
         """
+        # Validar que el prefijo sea solo aenc o tfroc
+        if prefix not in ['aenc', 'tfroc']:
+            st.warning(f"⚠️ Prefijo '{prefix}' no es válido. Solo se permiten 'aenc' y 'tfroc'")
+            return []
+        
         for extension in FILE_VERSION_PRIORITY:
             filtered_files = [
                 file for file in files 
@@ -146,7 +152,7 @@ class FTPClient:
             st.error(f"❌ Error al descargar {filename}: {str(e)}")
             return False
     
-    def download_month_files(self, year, month, temp_folder=None):
+    def download_month_files(self, year, month, temp_folder=None, sharepoint_info=None):
         # Si no se especifica temp_folder, usar la ruta por defecto
         if temp_folder is None:
             # Usar ruta fija en lugar de importar desde app.py
@@ -159,12 +165,13 @@ class FTPClient:
                     downloads_path = os.getcwd()
             temp_folder = os.path.join(downloads_path, "archivos_descargados")
         """
-        Descarga los archivos AENC y TFROC para un mes específico.
+        Descarga los archivos AENC y TFROC para un mes específico con lógica corregida.
         
         Args:
             year (int): Año
             month (int or str): Mes (se convertirá a formato MM)
             temp_folder (str): Carpeta temporal para almacenar archivos
+            sharepoint_info (dict): Información de SharePoint con estrategia y archivos
             
         Returns:
             list: Lista de archivos descargados exitosamente
@@ -173,19 +180,43 @@ class FTPClient:
             # Crear carpeta temporal si no existe
             os.makedirs(temp_folder, exist_ok=True)
             
-            # Listar archivos disponibles
+            # LÓGICA CORREGIDA: Implementar la estrategia según SharePoint
+            if sharepoint_info and sharepoint_info.get('strategy') == 'none':
+                st.info("✅ No se necesita descargar - Ya existen archivos .TxF en SharePoint")
+                return []
+            
+            # Listar archivos disponibles en FTP
             files = self.list_files(year, month)
             
             if not files:
                 st.warning(f"⚠️ No se encontraron archivos en el FTP para {year}-{month}")
                 return []
             
-            # Filtrar archivos por prioridad
-            aenc_files = self.filter_files_by_priority(files, "aenc")
-            tfroc_files = self.filter_files_by_priority(files, "tfroc")
+            # Determinar qué archivos descargar según la estrategia
+            files_to_download = []
             
-            # Combinar archivos a descargar
-            files_to_download = aenc_files + tfroc_files
+            if sharepoint_info and sharepoint_info.get('strategy') == 'check_ftp':
+                # Verificar si hay archivos .TxF de aenc y tfroc en el FTP
+                aenc_txf_files = [f for f in files if f.startswith("aenc") and f.endswith(".TxF")]
+                tfroc_txf_files = [f for f in files if f.startswith("tfroc") and f.endswith(".TxF")]
+                txf_files = aenc_txf_files + tfroc_txf_files
+                
+                if txf_files:
+                    st.info(f"🎯 Encontrados {len(txf_files)} archivos .TxF (aenc: {len(aenc_txf_files)}, tfroc: {len(tfroc_txf_files)}) en FTP - Descargando para reemplazar .TxR")
+                    files_to_download = txf_files
+                else:
+                    st.info("ℹ️ No hay archivos .TxF de aenc/tfroc en FTP - No se descargan archivos (mantener .TxR existentes)")
+                    return []
+            
+            elif sharepoint_info and sharepoint_info.get('strategy') == 'download':
+                # Descargar con prioridad .TxF > .TxR > .Tx2
+                st.info("🔄 Descargando archivos del FTP con prioridad .TxF > .TxR > .Tx2")
+                files_to_download = self._get_files_to_download_by_priority(files)
+            
+            else:
+                # Estrategia por defecto: descargar con prioridad
+                st.info("🔄 Descargando archivos del FTP con prioridad estándar")
+                files_to_download = self._get_files_to_download_by_priority(files)
             
             if not files_to_download:
                 st.warning(f"⚠️ No se encontraron archivos AENC o TFROC para descargar en {year}-{month}")
@@ -193,6 +224,11 @@ class FTPClient:
             
             # Mostrar información consolidada
             st.info(f"📥 Descargando {len(files_to_download)} archivos del FTP ({year}-{month})")
+            
+            # Separar archivos por tipo para mostrar información
+            aenc_files = [f for f in files_to_download if f.startswith("aenc")]
+            tfroc_files = [f for f in files_to_download if f.startswith("tfroc")]
+            
             if aenc_files:
                 st.info(f"   • AENC: {len(aenc_files)} archivos")
             if tfroc_files:
@@ -223,6 +259,51 @@ class FTPClient:
         except Exception as e:
             st.error(f"❌ Error en download_month_files para {year}-{month}: {str(e)}")
             return []
+    
+    def _get_files_to_download_by_priority(self, files):
+        """
+        Obtiene archivos para descargar siguiendo la prioridad .TxF > .TxR > .Tx2
+        SOLO archivos aenc y tfroc
+        
+        Args:
+            files (list): Lista de archivos disponibles en FTP
+            
+        Returns:
+            list: Lista de archivos a descargar (solo aenc y tfroc)
+        """
+        files_to_download = []
+        
+        # Filtrar solo archivos aenc y tfroc
+        aenc_tf_files = [f for f in files if f.startswith("aenc") and f.endswith(".TxF")]
+        tfroc_tf_files = [f for f in files if f.startswith("tfroc") and f.endswith(".TxF")]
+        txf_files = aenc_tf_files + tfroc_tf_files
+        
+        if txf_files:
+            st.info(f"🎯 Encontrados {len(txf_files)} archivos .TxF (aenc: {len(aenc_tf_files)}, tfroc: {len(tfroc_tf_files)}) - Prioridad máxima")
+            files_to_download.extend(txf_files)
+            return files_to_download
+        
+        # Si no hay .TxF, buscar archivos .TxR (solo aenc y tfroc)
+        aenc_tr_files = [f for f in files if f.startswith("aenc") and f.endswith(".TxR")]
+        tfroc_tr_files = [f for f in files if f.startswith("tfroc") and f.endswith(".TxR")]
+        txr_files = aenc_tr_files + tfroc_tr_files
+        
+        if txr_files:
+            st.info(f"🎯 Encontrados {len(txr_files)} archivos .TxR (aenc: {len(aenc_tr_files)}, tfroc: {len(tfroc_tr_files)}) - Segunda prioridad")
+            files_to_download.extend(txr_files)
+            return files_to_download
+        
+        # Si no hay .TxF ni .TxR, buscar archivos .Tx2 (solo aenc y tfroc)
+        aenc_t2_files = [f for f in files if f.startswith("aenc") and f.endswith(".Tx2")]
+        tfroc_t2_files = [f for f in files if f.startswith("tfroc") and f.endswith(".Tx2")]
+        tx2_files = aenc_t2_files + tfroc_t2_files
+        
+        if tx2_files:
+            st.info(f"🎯 Encontrados {len(tx2_files)} archivos .Tx2 (aenc: {len(aenc_t2_files)}, tfroc: {len(tfroc_t2_files)}) - Última prioridad")
+            files_to_download.extend(tx2_files)
+            return files_to_download
+        
+        return files_to_download
     
     def get_previous_month(self, year, month):
         """
