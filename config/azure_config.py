@@ -4,10 +4,33 @@ Este archivo lee las variables de entorno desde el archivo .env
 """
 
 import os
+import sys
+from pathlib import Path
 from dotenv import load_dotenv
 
 # Cargar variables de entorno desde .env
-load_dotenv()
+# Si estamos ejecutando desde un ejecutable, buscar .env en el directorio del ejecutable
+if getattr(sys, 'frozen', False):
+    # Ejecutando desde ejecutable
+    # Primero verificar si hay una variable de entorno que indique dónde está el .env
+    if 'DOTENV_FILE' in os.environ:
+        env_file = Path(os.environ['DOTENV_FILE'])
+        if env_file.exists():
+            load_dotenv(dotenv_path=env_file)
+        else:
+            load_dotenv()
+    else:
+        # Si no hay variable de entorno, buscar en el directorio del ejecutable
+        exe_dir = Path(sys.executable).parent
+        env_file = exe_dir / ".env"
+        if env_file.exists():
+            load_dotenv(dotenv_path=env_file)
+        else:
+            # Si no está en el directorio del ejecutable, intentar en el directorio actual
+            load_dotenv()
+else:
+    # Ejecutando desde script normal
+    load_dotenv()
 
 # Configuración de Azure AD
 AZURE_CONFIG = {

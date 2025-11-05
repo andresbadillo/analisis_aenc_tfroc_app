@@ -13,3 +13,4 @@ requests>=2.31.0
 streamlit-oauth>=0.1.14
 shareplum>=0.5.0
 holidays-co>=0.1.0
+pyinstaller>=6.0.0
