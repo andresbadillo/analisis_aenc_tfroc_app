@@ -28,7 +28,7 @@ FTP_CONFIG = {
     'server': 'xmftps.xm.com.co',
     'port': 210,
     'user': 'ISAMDNT\\1098742265',
-    'password': 'Ru1t0qu309p2026.'
+    'password': 'Ru1t0qu309p2026.*'
 }
 
 # Configuración SharePoint (actualizada para Microsoft Graph API)
