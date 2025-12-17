@@ -144,12 +144,45 @@ class FTPClient:
             return False
         
         try:
-            with open(local_path, "wb") as f:
-                self.connection.retrbinary(f"RETR {filename}", f.write)
-            return True
+            # Crear directorio si no existe
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            
+            # Usar callback explícito para asegurar escritura correcta en aplicaciones empaquetadas
+            def write_callback(data):
+                """Callback para escribir datos en el archivo."""
+                file_handle.write(data)
+            
+            with open(local_path, "wb") as file_handle:
+                # Descargar archivo usando callback explícito
+                self.connection.retrbinary(f"RETR {filename}", write_callback)
+                # Asegurar que el buffer se vacíe antes de cerrar
+                file_handle.flush()
+                # Forzar sincronización del sistema de archivos
+                os.fsync(file_handle.fileno())
+            
+            # Verificar que el archivo se descargó correctamente (no esté vacío)
+            if os.path.exists(local_path):
+                file_size = os.path.getsize(local_path)
+                if file_size == 0:
+                    st.error(f"❌ El archivo {filename} se descargó pero está vacío (0 bytes)")
+                    try:
+                        os.remove(local_path)  # Eliminar archivo vacío
+                    except:
+                        pass
+                    return False
+                return True
+            else:
+                st.error(f"❌ El archivo {filename} no se creó correctamente")
+                return False
             
         except Exception as e:
             st.error(f"❌ Error al descargar {filename}: {str(e)}")
+            # Limpiar archivo parcial si existe
+            if os.path.exists(local_path):
+                try:
+                    os.remove(local_path)
+                except:
+                    pass
             return False
     
     def download_month_files(self, year, month, temp_folder=None, sharepoint_info=None):
